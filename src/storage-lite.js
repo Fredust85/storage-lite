@@ -30,6 +30,7 @@ MODE_HTML5        = 1,
 MODE_GECKO        = 2,
 MODE_DB           = 3,
 MODE_USERDATA     = 4,
+MODE_GEARS        = 5,
 
 USERDATA_PATH     = 'yui_storage_lite',
 USERDATA_NAME     = 'data',
@@ -49,7 +50,11 @@ if (w.localStorage) {
 } else if (w.openDatabase && navigator.userAgent.indexOf('Chrome') === -1) {
     storageMode = MODE_DB;
 } else if (Y.UA.ie >= 5) {
+  if (window.google && google.gears) { 
+    storageMode = MODE_GEARS;
+  } else {
     storageMode = MODE_USERDATA;
+  }
 } else {
     storageMode = MODE_NOOP;
 }
@@ -208,9 +213,9 @@ if (storageMode === MODE_HTML5 || storageMode === MODE_GECKO) {
 
     StorageLite.fire(EVT_READY);
 
-} else if (storageMode === MODE_DB || storageMode === MODE_USERDATA) {
+} else if (storageMode === MODE_DB || storageMode === MODE_GEARS || storageMode === MODE_USERDATA) {
 
-    // Common methods shared by the database and userdata implementations.
+    // Common methods shared by the databases and userdata implementations.
     Y.mix(StorageLite, {
         clear: function () {
             data = {};
@@ -272,6 +277,33 @@ if (storageMode === MODE_HTML5 || storageMode === MODE_GECKO) {
                 StorageLite.fire(EVT_READY);
             });
         });
+
+      } else if (storageMode === MODE_GEARS) {
+
+        // Update data
+        Y.mix(StorageLite, {
+          _save: function () {
+            storageDriver.execute('BEGIN');
+            storageDriver.execute("REPLACE INTO " + DB_NAME + " (name, value) VALUES ('data', ?)", [JSON.stringify(data)]);
+            storageDriver.execute('COMMIT');
+          }
+        }, true);
+
+        // create the database
+        storageDriver = google.gears.factory.create('beta.database');
+        storageDriver.open(DB_NAME);
+        storageDriver.execute("CREATE TABLE IF NOT EXISTS " + DB_NAME + " (name TEXT PRIMARY KEY, value TEXT NOT NULL)");
+
+        // fetch existing data
+        rs = storageDriver.execute("SELECT value FROM " + DB_NAME + " WHERE name = 'data' ");
+        if ( rs.isValidRow() ) {
+          data = JSON.parse(rs.field(0));
+          rs.close();
+        } else {
+          data = {};
+        }
+
+        StorageLite.fire(EVT_READY);
 
     } else if (storageMode === MODE_USERDATA) {
 
